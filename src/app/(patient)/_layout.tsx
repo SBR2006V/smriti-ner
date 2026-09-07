@@ -15,7 +15,8 @@ export default function PatientLayout() {
   const [pinModalVisible, setPinModalVisible] = useState<boolean>(false);
 
   // Determine active tab based on route
-  const activeTab: PatientTab = pathname.includes('listen') ? 'listen' : 'games';
+  const activeTab: PatientTab =
+    pathname.includes('listen') || pathname.includes('who-am-i') ? 'listen' : 'games';
 
   const handleSelectTab = (tab: PatientTab) => {
     if (tab === 'games') {

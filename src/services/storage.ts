@@ -1,8 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { WhoAmIPerson } from '@/types/whoAmI';
+
+export { WhoAmIPerson };
 
 const STORAGE_KEYS = {
   PATIENT_PROFILE: '@smriti_patient_profile',
+  WHO_AM_I_PEOPLE: 'smriti_ner_who_am_i_people',
 } as const;
 
 export interface PatientProfile {
@@ -10,6 +14,18 @@ export interface PatientProfile {
   age?: string;
   otherDetails?: string;
 }
+
+/**
+ * Seeded initial demo person for Who Am I ("কে আমি?")
+ * Name: মিতা, Relationship: মেয়ে, Photo: local placeholder identifier, Audio: null
+ */
+export const SEEDED_DEMO_PERSON: WhoAmIPerson = {
+  id: 'demo-1',
+  name: 'মিতা',
+  relationship: 'মেয়ে',
+  photoUri: 'placeholder-daughter',
+  audioUri: null,
+};
 
 // In-memory fallback for environments where AsyncStorage might fail or during fast refresh
 const memoryStorage: Record<string, string> = {};
@@ -57,3 +73,57 @@ export async function setPatientProfile(profile: PatientProfile): Promise<void> 
     console.warn('[Storage] Failed to save patient profile:', error);
   }
 }
+
+/**
+ * Loads the array of people for Who Am I ("কে আমি?").
+ * If no data exists yet, seeds and persists the single demo person.
+ * Existing caregiver data is never overwritten.
+ */
+export async function getWhoAmIPeople(): Promise<WhoAmIPerson[]> {
+  try {
+    let raw: string | null = null;
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
+      raw = window.localStorage.getItem(STORAGE_KEYS.WHO_AM_I_PEOPLE);
+    }
+    if (!raw) {
+      raw = await AsyncStorage.getItem(STORAGE_KEYS.WHO_AM_I_PEOPLE);
+    }
+    if (!raw) {
+      raw = memoryStorage[STORAGE_KEYS.WHO_AM_I_PEOPLE] || null;
+    }
+
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed as WhoAmIPerson[];
+      }
+    }
+
+    // No existing data in storage: seed the single demo person
+    const initialPeople = [SEEDED_DEMO_PERSON];
+    await setWhoAmIPeople(initialPeople);
+    return initialPeople;
+  } catch (error) {
+    console.warn('[Storage] Failed to read Who Am I people:', error);
+    return [SEEDED_DEMO_PERSON];
+  }
+}
+
+/**
+ * Persists the array of people for Who Am I ("কে আমি?") to AsyncStorage.
+ */
+export async function setWhoAmIPeople(people: WhoAmIPerson[]): Promise<void> {
+  try {
+    const jsonStr = JSON.stringify(people);
+    memoryStorage[STORAGE_KEYS.WHO_AM_I_PEOPLE] = jsonStr;
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(STORAGE_KEYS.WHO_AM_I_PEOPLE, jsonStr);
+    }
+
+    await AsyncStorage.setItem(STORAGE_KEYS.WHO_AM_I_PEOPLE, jsonStr);
+  } catch (error) {
+    console.warn('[Storage] Failed to save Who Am I people:', error);
+  }
+}
+

@@ -103,6 +103,12 @@ function createShuffledDeck(): GameCard[] {
   return deck;
 }
 
+const BENGALI_DIGITS = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+
+function toBengaliNumber(num: number): string {
+  return String(num).replace(/\d/g, (digit) => BENGALI_DIGITS[parseInt(digit, 10)] ?? digit);
+}
+
 export default function ChenaChobiScreen() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
@@ -192,7 +198,8 @@ export default function ChenaChobiScreen() {
   };
 
   const isGameCompleted = matchedCardIds.length === 16;
-  const matchedPairsCount = matchedCardIds.length / 2;
+  const matchedPairsCount = Math.floor(matchedCardIds.length / 2);
+  const matchedPairsBengali = toBengaliNumber(matchedPairsCount);
 
   return (
     <ScrollView
@@ -251,7 +258,7 @@ export default function ChenaChobiScreen() {
           খেলার অগ্রগতি • 4x4 Grid
         </Text>
         <Text style={[styles.statusHint, { color: colors.text }]}>
-          জোড়া মিলেছে: {matchedPairsCount} / ৮
+          জোড়া মিলেছে: {matchedPairsBengali} / ৮
         </Text>
       </View>
 

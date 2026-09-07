@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { AudioPlayer, createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 
 /**
  * Audio Service for Smriti-NER
@@ -7,114 +7,304 @@ import { Platform } from 'react-native';
  * 2. assets/audio/khub-bhalo.mp3
  *
  * Requirements:
+ * - Bundled local MP3 assets via require().
  * - Play success-chime.mp3 first.
- * - After chime finishes, play khub-bhalo.mp3.
- * - Do not allow the two sounds to overlap.
- * - Stop/reset cleanly when requested (e.g., game restarted).
- * - Graceful fallback if files do not exist yet without breaking game mechanics.
+ * - Wait until chime finishes, then play khub-bhalo.mp3.
+ * - Sounds must NOT overlap.
+ * - Stop/reset cleanly when requested (e.g. game restarted or back pressed).
+ * - Safe error handling: never crashes game if audio fails.
  */
 
-// Local expected audio file paths
-const CHIME_PATH = 'assets/audio/success-chime.mp3';
-const KHUB_BHALO_PATH = 'assets/audio/khub-bhalo.mp3';
+// Local bundled pre-recorded audio assets
+const CHIME_ASSET = require('@/assets/audio/success-chime.mp3');
+const KHUB_BHALO_ASSET = require('@/assets/audio/khub-bhalo.mp3');
+
+let isAudioModeConfigured = false;
+
+async function configureAudioMode(): Promise<void> {
+  if (isAudioModeConfigured) return;
+  try {
+    await setAudioModeAsync({
+      playsInSilentMode: true,
+    });
+    isAudioModeConfigured = true;
+  } catch (error) {
+    console.warn('[SoundManager] Could not configure audio mode:', error);
+  }
+}
 
 class SoundManager {
-  private currentWebAudio: HTMLAudioElement | null = null;
+  private chimePlayer: AudioPlayer | null = null;
+  private khubBhaloPlayer: AudioPlayer | null = null;
+  private personVoicePlayer: AudioPlayer | null = null;
+  private activePersonId: string | null = null;
+  private personVoiceSub: { remove: () => void } | null = null;
+  private currentSequenceId = 0;
   private isPlaying = false;
-  private cancelCurrentSequence = false;
+
+  public get playing(): boolean {
+    return this.isPlaying;
+  }
+
+  public getActivePersonId(): string | null {
+    return this.activePersonId;
+  }
+
+  private getChimePlayer(): AudioPlayer | null {
+    if (!this.chimePlayer) {
+      try {
+        this.chimePlayer = createAudioPlayer(CHIME_ASSET);
+      } catch (err) {
+        console.warn('[SoundManager] Failed to create chime player:', err);
+      }
+    }
+    return this.chimePlayer;
+  }
+
+  private getKhubBhaloPlayer(): AudioPlayer | null {
+    if (!this.khubBhaloPlayer) {
+      try {
+        this.khubBhaloPlayer = createAudioPlayer(KHUB_BHALO_ASSET);
+      } catch (err) {
+        console.warn('[SoundManager] Failed to create khub-bhalo player:', err);
+      }
+    }
+    return this.khubBhaloPlayer;
+  }
 
   /**
-   * Safely stop any ongoing audio playback and cancel sequences.
+   * Safely stop any currently playing audio and cancel pending playback sequences.
    */
-  public stop() {
-    this.cancelCurrentSequence = true;
+  public stop(): void {
+    this.currentSequenceId++;
     this.isPlaying = false;
+    this.stopPersonVoice();
 
-    if (Platform.OS === 'web' && this.currentWebAudio) {
+    if (this.chimePlayer) {
       try {
-        this.currentWebAudio.pause();
-        this.currentWebAudio.currentTime = 0;
+        this.chimePlayer.pause();
+        this.chimePlayer.seekTo(0).catch(() => {});
       } catch {
-        // Ignore abort/pause errors
+        // Ignore safe reset errors
       }
-      this.currentWebAudio = null;
     }
+
+    if (this.khubBhaloPlayer) {
+      try {
+        this.khubBhaloPlayer.pause();
+        this.khubBhaloPlayer.seekTo(0).catch(() => {});
+      } catch {
+        // Ignore safe reset errors
+      }
+    }
+  }
+
+  /**
+   * Safely release audio resources on unmount if needed.
+   */
+  public release(): void {
+    this.stop();
+    try {
+      if (this.chimePlayer) {
+        this.chimePlayer.remove();
+        this.chimePlayer = null;
+      }
+      if (this.khubBhaloPlayer) {
+        this.khubBhaloPlayer.remove();
+        this.khubBhaloPlayer = null;
+      }
+    } catch (err) {
+      console.warn('[SoundManager] Error releasing audio resources:', err);
+    }
+  }
+
+  /**
+   * Play or toggle playback of a person's recorded voice in Who Am I.
+   * - If that person's voice is already playing, stops/pauses it.
+   * - If another person's voice is playing, stops it cleanly before starting.
+   * - Does not overlap voices or game audio.
+   */
+  public async playPersonVoice(
+    personId: string,
+    audioUri: string,
+    onEnded?: () => void
+  ): Promise<void> {
+    if (this.activePersonId === personId && this.personVoicePlayer) {
+      this.stopPersonVoice();
+      return;
+    }
+
+    this.stop();
+    await configureAudioMode();
+
+    try {
+      this.personVoicePlayer = createAudioPlayer(audioUri);
+      this.activePersonId = personId;
+
+      this.personVoiceSub = this.personVoicePlayer.addListener('playbackStatusUpdate', (status) => {
+        if (status.didJustFinish) {
+          this.stopPersonVoice();
+          onEnded?.();
+        }
+      });
+
+      await this.personVoicePlayer.seekTo(0).catch(() => {});
+      this.personVoicePlayer.play();
+    } catch (err) {
+      console.warn('[SoundManager] Error playing person voice:', err);
+      this.stopPersonVoice();
+    }
+  }
+
+  /**
+   * Safely stop any currently playing person voice.
+   */
+  public stopPersonVoice(): void {
+    if (this.personVoiceSub) {
+      try {
+        this.personVoiceSub.remove();
+      } catch {}
+      this.personVoiceSub = null;
+    }
+    if (this.personVoicePlayer) {
+      try {
+        this.personVoicePlayer.pause();
+        this.personVoicePlayer.seekTo(0).catch(() => {});
+        this.personVoicePlayer.remove();
+      } catch {}
+      this.personVoicePlayer = null;
+    }
+    this.activePersonId = null;
   }
 
   /**
    * Play the two-step match success audio sequence:
-   * 1. success-chime.mp3
-   * 2. khub-bhalo.mp3
+   * 1. assets/audio/success-chime.mp3
+   * 2. Wait until chime finishes
+   * 3. assets/audio/khub-bhalo.mp3
+   *
+   * The sounds do NOT overlap.
    */
   public async playMatchSuccessSequence(): Promise<void> {
-    // Stop any existing playback first
-    this.stop();
-    this.cancelCurrentSequence = false;
+    const sequenceId = ++this.currentSequenceId;
     this.isPlaying = true;
+
+    // Pause any currently running sounds
+    if (this.chimePlayer) {
+      try {
+        this.chimePlayer.pause();
+      } catch {
+        // Safe reset
+      }
+    }
+    if (this.khubBhaloPlayer) {
+      try {
+        this.khubBhaloPlayer.pause();
+      } catch {
+        // Safe reset
+      }
+    }
+
+    await configureAudioMode();
+    if (this.currentSequenceId !== sequenceId) return;
 
     try {
       // 1. Play success chime
-      await this.playLocalSound(CHIME_PATH);
+      const chime = this.getChimePlayer();
+      if (chime) {
+        await this.playPlayerUntilEnd(chime, sequenceId, 2500);
+      }
 
-      if (this.cancelCurrentSequence) return;
+      if (this.currentSequenceId !== sequenceId) return;
 
-      // 2. Play "khub bhalo" voice
-      await this.playLocalSound(KHUB_BHALO_PATH);
-    } catch {
-      // Audio playback failed or files not present yet - game continues gracefully
+      // 2. Play "khub bhalo" voice after chime finishes
+      const voice = this.getKhubBhaloPlayer();
+      if (voice) {
+        await this.playPlayerUntilEnd(voice, sequenceId, 4500);
+      }
+    } catch (err) {
+      console.warn('[SoundManager] Error in match success audio sequence:', err);
     } finally {
-      this.isPlaying = false;
+      if (this.currentSequenceId === sequenceId) {
+        this.isPlaying = false;
+      }
     }
   }
 
-  private playLocalSound(soundPath: string): Promise<void> {
+  private playPlayerUntilEnd(
+    player: AudioPlayer,
+    sequenceId: number,
+    defaultTimeoutMs: number
+  ): Promise<void> {
     return new Promise((resolve) => {
-      if (this.cancelCurrentSequence) {
+      let isDone = false;
+      let subscription: { remove: () => void } | null = null;
+      let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const finish = () => {
+        if (isDone) return;
+        isDone = true;
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
+        if (subscription) {
+          try {
+            subscription.remove();
+          } catch {
+            // ignore
+          }
+          subscription = null;
+        }
         resolve();
+      };
+
+      if (this.currentSequenceId !== sequenceId) {
+        finish();
         return;
       }
 
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.Audio) {
-        try {
-          const audio = new window.Audio(`/${soundPath}`);
-          this.currentWebAudio = audio;
-
-          const cleanup = () => {
-            audio.removeEventListener('ended', handleEnded);
-            audio.removeEventListener('error', handleError);
-            if (this.currentWebAudio === audio) {
-              this.currentWebAudio = null;
-            }
-          };
-
-          const handleEnded = () => {
-            cleanup();
-            resolve();
-          };
-
-          const handleError = () => {
-            cleanup();
-            // Resolve instead of reject so sequential playback can proceed gracefully
-            resolve();
-          };
-
-          audio.addEventListener('ended', handleEnded);
-          audio.addEventListener('error', handleError);
-
-          const playPromise = audio.play();
-          if (playPromise !== undefined) {
-            playPromise.catch(() => {
-              cleanup();
-              resolve();
-            });
+      try {
+        subscription = player.addListener('playbackStatusUpdate', (status) => {
+          if (this.currentSequenceId !== sequenceId) {
+            finish();
+            return;
           }
-        } catch {
-          resolve();
-        }
-      } else {
-        // On native platforms, when audio files and native driver are configured,
-        // this is where native audio driver binds. Resolves cleanly if files are pending.
-        resolve();
+          if (status.didJustFinish) {
+            finish();
+          }
+        });
+
+        player
+          .seekTo(0)
+          .catch(() => {
+            // Seek failed or unsupported, continue with play
+          })
+          .then(() => {
+            if (this.currentSequenceId !== sequenceId) {
+              try {
+                player.pause();
+              } catch {
+                // ignore
+              }
+              finish();
+              return;
+            }
+
+            player.play();
+
+            const durationMs =
+              player.duration && player.duration > 0
+                ? Math.ceil(player.duration * 1000) + 400
+                : defaultTimeoutMs;
+
+            fallbackTimer = setTimeout(() => {
+              finish();
+            }, durationMs);
+          });
+      } catch (err) {
+        console.warn('[SoundManager] playPlayerUntilEnd error:', err);
+        finish();
       }
     });
   }

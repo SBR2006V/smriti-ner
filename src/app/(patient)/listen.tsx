@@ -1,4 +1,5 @@
 import { Colors, DementiaUX, Spacing } from '@/constants/theme';
+import { useRouter } from 'expo-router';
 import {
   Pressable,
   ScrollView,
@@ -11,9 +12,11 @@ import {
 export default function ListenScreen() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
+  const router = useRouter();
 
   const audioCategories = [
     {
+      id: 'who-am-i',
       title: 'কে আমি?',
       english: 'Who Am I? • Personal Identity',
       emoji: '🪞',
@@ -21,6 +24,12 @@ export default function ListenScreen() {
       desc: 'চেনা মানুষের কণ্ঠ, প্রিয়জনদের স্মৃতি ও নিজের পরিচয়',
     },
   ];
+
+  const handleCategoryPress = (categoryId: string) => {
+    if (categoryId === 'who-am-i') {
+      router.push('/(patient)/who-am-i');
+    }
+  };
 
   return (
     <ScrollView
@@ -47,11 +56,14 @@ export default function ListenScreen() {
         </Text>
       </View>
 
-      {/* Oversized Cultural Audio Cards (Placeholders) */}
+      {/* Cultural Audio Cards */}
       <View style={styles.cardList}>
-        {audioCategories.map((item, idx) => (
+        {audioCategories.map((item) => (
           <Pressable
-            key={idx}
+            key={item.id}
+            onPress={() => handleCategoryPress(item.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.title}, ${item.english}`}
             style={({ pressed }) => [
               styles.card,
               {
