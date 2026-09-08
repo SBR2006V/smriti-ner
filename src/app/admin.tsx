@@ -5,6 +5,7 @@ import {
   setPatientProfile,
 } from '@/services/storage';
 import { useRouter } from 'expo-router';
+import { WhoAmIManagement } from '@/components/WhoAmIManagement';
 import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -66,7 +67,7 @@ export default function AdminScreen() {
       setTimeout(() => {
         setSaveSuccessMsg(null);
       }, 4000);
-    } catch (err) {
+    } catch {
       setNameError('প্রোফাইল সংরক্ষণ করতে সমস্যা হয়েছে, পুনরায় চেষ্টা করুন');
     } finally {
       setIsSaving(false);
@@ -231,6 +232,9 @@ export default function AdminScreen() {
               </Text>
             </Pressable>
           </View>
+
+          {/* কে আমি? পরিচালনা করুন • Manage Who Am I? Section */}
+          <WhoAmIManagement />
 
           {/* Primary Action: Return to Patient View */}
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>

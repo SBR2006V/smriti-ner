@@ -1,8 +1,8 @@
 import { Colors, DementiaUX, Spacing } from '@/constants/theme';
 import { soundManager } from '@/services/audio';
-import { getWhoAmIPeople, SEEDED_DEMO_PERSON, WhoAmIPerson } from '@/services/storage';
-import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import { getWhoAmIPeople, resolvePersonPhoto, SEEDED_DEMO_PERSON, WhoAmIPerson } from '@/services/storage';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -13,51 +13,32 @@ import {
   View,
 } from 'react-native';
 
-const DEFAULT_AVATAR_ASSET = require('@/assets/images/icon.png');
-
-/**
- * Resolves a person's photoUri into a valid React Native Image source.
- * Handles local device file URIs, remote URLs, and local bundled placeholder assets.
- */
-function resolvePersonPhoto(photoUri?: string | null): any {
-  if (!photoUri || photoUri === 'placeholder-daughter' || photoUri === 'default-avatar') {
-    return DEFAULT_AVATAR_ASSET;
-  }
-  if (
-    photoUri.startsWith('file:') ||
-    photoUri.startsWith('http://') ||
-    photoUri.startsWith('https://') ||
-    photoUri.startsWith('data:') ||
-    photoUri.startsWith('blob:')
-  ) {
-    return { uri: photoUri };
-  }
-  return DEFAULT_AVATAR_ASSET;
-}
-
 export default function WhoAmIScreen() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
   const router = useRouter();
 
-  // Initialized with SEEDED_DEMO_PERSON so screen is never empty
+  // Initialized with SEEDED_DEMO_PERSON as safe fallback
   const [people, setPeople] = useState<WhoAmIPerson[]>([SEEDED_DEMO_PERSON]);
   const [activeAudioPersonId, setActiveAudioPersonId] = useState<string | null>(null);
 
-  // Load people on mount from AsyncStorage
-  useEffect(() => {
-    let isMounted = true;
-    getWhoAmIPeople().then((storedPeople) => {
-      if (isMounted) {
-        setPeople(storedPeople);
-      }
-    });
+  // Reload people from AsyncStorage whenever screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      getWhoAmIPeople().then((storedPeople) => {
+        if (isMounted) {
+          setPeople(storedPeople);
+        }
+      });
 
-    return () => {
-      isMounted = false;
-      soundManager.stop();
-    };
-  }, []);
+      return () => {
+        isMounted = false;
+        soundManager.stop();
+        setActiveAudioPersonId(null);
+      };
+    }, [])
+  );
 
   const handleBack = () => {
     soundManager.stop();

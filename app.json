@@ -33,7 +33,15 @@
           "imageWidth": 76
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Smriti-NER to access photos for family member profiles.",
+          "cameraPermission": "Allow Smriti-NER to take photos for family member profiles.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

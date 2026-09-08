@@ -74,10 +74,34 @@ export async function setPatientProfile(profile: PatientProfile): Promise<void> 
   }
 }
 
+const DEFAULT_AVATAR_ASSET = require('@/assets/images/icon.png');
+
+/**
+ * Resolves a person's photoUri into a valid React Native Image source.
+ * Handles local device file URIs, content URIs, remote URLs, data URIs, blob URIs, and local bundled placeholder assets.
+ */
+export function resolvePersonPhoto(photoUri?: string | null): any {
+  if (!photoUri || photoUri === 'placeholder-daughter' || photoUri === 'default-avatar') {
+    return DEFAULT_AVATAR_ASSET;
+  }
+  if (
+    photoUri.startsWith('file:') ||
+    photoUri.startsWith('content:') ||
+    photoUri.startsWith('http://') ||
+    photoUri.startsWith('https://') ||
+    photoUri.startsWith('data:') ||
+    photoUri.startsWith('blob:') ||
+    photoUri.startsWith('/')
+  ) {
+    return { uri: photoUri };
+  }
+  return DEFAULT_AVATAR_ASSET;
+}
+
 /**
  * Loads the array of people for Who Am I ("কে আমি?").
- * If no data exists yet, seeds and persists the single demo person.
- * Existing caregiver data is never overwritten.
+ * If no data exists yet (first app launch), seeds and persists the single demo person.
+ * If the user has edited or deleted the demo person, their saved data (including empty list) is preserved.
  */
 export async function getWhoAmIPeople(): Promise<WhoAmIPerson[]> {
   try {
@@ -92,14 +116,18 @@ export async function getWhoAmIPeople(): Promise<WhoAmIPerson[]> {
       raw = memoryStorage[STORAGE_KEYS.WHO_AM_I_PEOPLE] || null;
     }
 
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed as WhoAmIPerson[];
+    if (raw !== null) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed as WhoAmIPerson[];
+        }
+      } catch (e) {
+        console.warn('[Storage] Failed to parse Who Am I people, falling back to seed:', e);
       }
     }
 
-    // No existing data in storage: seed the single demo person
+    // No existing data in storage (first launch): seed the single demo person
     const initialPeople = [SEEDED_DEMO_PERSON];
     await setWhoAmIPeople(initialPeople);
     return initialPeople;
